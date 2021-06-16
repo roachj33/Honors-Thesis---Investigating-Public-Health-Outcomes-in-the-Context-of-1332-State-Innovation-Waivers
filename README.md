@@ -1,0 +1,2 @@
+# Honors-Thesis---Investigating-Public-Health-Outcomes-in-the-Context-of-1332-State-Innovation-Waivers
+This repository contains all resources and reports from my Economics Honors Program thesis, "Investigating Public Health Outcomes in the Context of 1332 State Innovation Waivers", an exploration of the causal impacts of state-based reinsurance programs on the health and health-related behaviors of statewide populations.
