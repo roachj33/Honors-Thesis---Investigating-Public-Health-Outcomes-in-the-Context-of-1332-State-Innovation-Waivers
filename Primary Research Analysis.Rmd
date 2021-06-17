@@ -1,7 +1,7 @@
 ---
 title: "Research analysis - r"
 author: "Joey Roach"
-date: "February 7, 2021"
+date: "May 17th, 2021"
 output:
   html_document: default
   pdf_document: default
@@ -66,7 +66,6 @@ variable, which is an expectation of working under a difference-in-differences m
 options(scipen=999)
 set.seed(5172021)
 # install.packages("ggplot2")
-
 # install.packages("faraway")
 # install.packages("MatchIt", dependencies = TRUE)
 # install.packages("lmtest")
