@@ -1,0 +1,1297 @@
+---
+title: "Research analysis - r"
+author: "Joey Roach"
+date: "May 17th, 2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+  This RMarkdown file contains analysis conducted on BRFSS survey data from 2012-2019 in regards to identifying causal changes in health outcomes due to implementation of reinsurance programs. This analysis operates on the basis of a difference-in-differences research design, with treatment implementation occurring at two separate times, one group with treatment implemented in 2018 and another with treatment in 2019. The difference between this file and "Primary Research Analysis.Rmd" is that the analysis conducted in this file omits Wisconsin and the other control states which did not adopt Medicaid expansions-- the results here then strictly apply to states which did have Medicaid expansion policies. Variables used in this analysis are described below:
+  
+  * STATE: A numeric indicator for state of residence of the respondent. These are as follows:
+    + 2: Alaska
+    + 4: Arizona
+    + 20: Kansas.
+    + 23: Maine
+    + 24: Maryland
+    + 26: Michigan
+    + 27: Minnesota
+    + 36: New York
+    + 41: Oregon
+    + 42: Pennsylvania
+    + 46: South Dakota
+    + 47: Tennessee
+    + 53: Washington
+    + 55: Wisconsin
+  * YEAR: Numeric variable indicating year of survey.
+  * NUMADULT: Numeric variable indicating how many persons aged 18 or older live in the household of the respondent.
+  * MARITAL: Multi-level categorical variable denoting marriage status of respondent. 
+  * INCOME: Multi-level categorical variable indicating the income bracket of the respondent.
+  * RENT: Multi-level categorical variable indicating whether the respondent rents or owns their residence.
+  * CHILDREN: Numeric variable indicating how many children less than 18 years old live in the household of the respondent.
+  * AGE: A binary variable, where a 1 indicates that the respondent is aged 18-64, a 2 indicates they are aged 65+.
+  * SEX: A binary variable indicating sex of the respondent, where a 1 corresponds to Male, and a 2 to Female.
+  * EMPLOY: Multi-level categorical variable denoting the employment status of the respondent.
+  * RACE: A multi-level categorical variable indicating the race of the respondent (options restricted to white, black, hispanic, other race/non-hispanic and multiracial/non-hispanic).
+  * TREAT_EARLY: Indicator variable denoting whether respondent resides in a state that implemented reinsurance in 2018 (early).
+  * TREAT_LATE: Indicator variable denoting whether respondent resided in a state that implemented reinsurance in 2019 (late).
+  * TIME_EARLY: Indicator variable denoting whether or not the respondent took the survey during or after 2018.
+  * TIME_LATE: Indicator variable denoting whether or not the respondent took the survey during or after 2019.
+  * GOOD_GENHTLH: Binary response variable with a 1 for those who reported excellent, very good, or good general health, a 0 for those who reported fair or poor general health.
+  * PHYS_DISTRESS: Binary response variable with a 1 for those who reported 14 days or more within the past month where they experienced poor physical health, a 0 for those who reported less than 14 days in the past month with poor physical health [a person who reports poor physical health for 14 or more days in the past month is defined to be in physical distress].
+  * MENT_DISTRESS: Binary response variable with a 1 for those who reported 14 days or more within the past month where they experienced poor mental health, a 0 for those who reported less than 14 days in the past month with poor mental health [a person who reports poor mental health for 14 or more days in the past month is defined to be in mental distress].
+  * POOR_OVR_HLTH: Binary response variable with a 1 for those who reported that poor mental or physical health kept them from doing usual activities for 14 or more days during the past month, a 0 for those who reported that poor mental or physical health kept them from doing usual activities for less than 14 days in the past month.
+  * HAS_PERSDOC: Binary response variable where a 1 indicates that the respondent has a personal doctor, a 0 indicates that they do not.
+  * ANNUAL_CHECKUP: Binary response variable that indicates whether the respondent has had an annual checkup within the past year (1) or not (0).
+  * HLTHPLN: Binary response variable where a 1 indicates that the respondent has a health plan, a 0 indicates that they do not.
+  * MEDCOST: Binary response variable where a 1 indicates that the respondent needed to see a doctor within the past 12 months, but could not due to costs. A 0 indicates that the respondent did not encounter such a situation.
+  * PROP_GOOD_GENHLTH: An annually calculated proportion of individuals in the treatment and control groups who reported good general health.
+  * PROP_PHYS_DISTRESS: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported physical distress within the past month.
+  * PROP_MENT_DISTRESS: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported mental distress within the past month.
+  * PROP_POOR_OVR_HLTH: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported poor overall health in the past month.
+  * PROP_HLTHPLN: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported having a health plan.
+  * PROP_HAS_PERSDOC: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported having a personal doctor.
+  * PROP_MEDCOST: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported needing to see a doctor within the past 12 months, but were unable to due to cost.
+  * PROP_ANNUAL_CHECKUP: An annually calculated proportion of individuals from the survey data in the treatment and control groups who reported receiving a checkup within the past year.
+
+As defined above, the outcomes we are interested in examining are the binary response variables. These variables are categorical in nature, but proportions of individuals in both control and treatment groups who exhibited these outcomes have been calculated to turn them into a more standard quantitative 
+variable, which is an expectation of working under a difference-in-differences model, which relies upon linear regression methods. Sensitivity analysis will later be conducted upon these variables using them in their natural state to utilize logistic regression. First, however, we conduct a standard OLS regression on the calculated proportions using the difference-in-differences framework. We use robust standard errors in anticipation that the data is heteroskedastic. A key assumption of a difference-in-differences model is parallel trends between the control and treatment groups in terms of the average outcome prior to implementation of the treatment-- although some proportions here do not adhere to this assumption, we still proceed with our first step in being a standard linear regression model.
+``` {r}
+# For converting scientific notation
+options(scipen=999)
+set.seed(5172021)
+
+# install.packages("ggplot2")
+# install.packages("faraway")
+# install.packages("MatchIt", dependencies = TRUE)
+# install.packages("lmtest")
+# install.packages("sandwich")
+# install.packages("survey")
+# install.packages("glmnet")
+# install.packages("caret")
+# install.packages("mlogit")
+# install.packages("WeightIt")
+library(faraway)
+library(MatchIt)
+library(lmtest)
+library(sandwich)
+library(survey)
+library(glmnet)
+library(caret)
+library(mlogit)
+library(cobalt)
+library(WeightIt)
+# Read in data.
+data <- read.csv("multi_time_prop_data.csv")
+# Observe basic data stats
+head(data)
+str(data)
+summary(data)
+names(data)
+# Drop 2020 values as there are only a couple hundred of them.
+complete <- subset(data, YEAR != 2020)
+# Subset for only medicaid expansion states, meaning that we
+# drop Wisconsin, Wyoming, South Dakota and Kansas.
+complete <- subset(complete, STATE != 55 & STATE != 56 &
+                     STATE != 46 & STATE!= 20)
+# Get training-testing split
+train.index <- sample(1:nrow(complete), nrow(complete) * 0.8)
+train <- complete[train.index, ]
+test <- complete[-train.index, ]
+
+
+# Define function to derive formula for each unique outcome
+get.formula <- function(outcome, simple){
+  if (isTRUE(simple)){
+    first.interacts <- c("(as.factor(TREAT_EARLY)",
+                         "as.factor(TIME_EARLY))")
+    second.interacts <- c("(as.factor(TREAT_LATE)",
+                          "as.factor(TIME_LATE))")
+    first.interacted <- paste(first.interacts[1],
+                              first.interacts[2],
+                              sep = "*")
+    interactions <- paste(first.interacted,
+                           paste(second.interacts,
+                                  collapse = "*"),
+                           sep = "+")
+    form.string <- paste(outcome,
+                        paste(interactions,
+                              collapse = "+"),
+                         sep = "~")
+    return(form.string)
+  }
+  controls <- c("NUMADULT", "as.factor(MARITAL)",
+                "as.factor(INCOME)", "as.factor(RENT)",
+                "CHILDREN", "as.factor(AGE)", 
+                "as.factor(SEX)", "as.factor(EMPLOY)",
+                "as.factor(RACE)")
+  first.interacts <- c("(as.factor(TREAT_EARLY)",
+                       "as.factor(TIME_EARLY))")
+  second.interacts <- c("(as.factor(TREAT_LATE)",
+                         "as.factor(TIME_LATE))")
+  outcome.controls <- paste(outcome, paste(controls,
+                                    collapse = "+"),
+                            sep = "~")
+  first.interacted <- paste(first.interacts[1],
+                            first.interacts[2],
+                            sep = "*")
+  interactions <- paste(first.interacted,
+                          paste(second.interacts,
+                                collapse = "*"),
+                          sep = "+")
+  form.string <- paste(outcome.controls,
+                       paste(interactions,
+                             collapse = "*"),
+                       sep = "+")
+  return(form.string)
+}
+
+# Define function to conduct intial OLS regressions.
+run.ols <- function(training.data, testing.data, outcome,
+                    to.weight, simple){
+  form.string <- get.formula(outcome, simple)
+  form <- as.formula(form.string)
+  base <- "Conducting analysis for"
+  statement <- paste(base, outcome, sep = " ")
+  print(statement)
+  reg <- lm(form, data = training.data, weights = to.weight)
+  pred <- predict(reg, newdata = testing.data)
+  mse <- 
+    mean((pred - testing.data[, outcome]) ^ 2)
+  # General summary of gen_health_reg
+  print("Model summary given below")
+  print(summary(reg))
+  # Visualizing the relationships.
+  print("Visualizing residual vs fitted values")
+  plot(reg, which = 1)
+  print("Checking the distribution of the residuals")
+  plot(reg, which = 2)
+  print("Checking the variance of the residuals")
+  plot(reg, which = 3)
+  # Checking for multicollinearity
+  print("Testing for multicollinearity amongst variables")
+  print(vif(reg))
+  # Check for heteroskedasticity
+  print("Checking for heteroskedasticity within the model")
+  print(bptest(reg))
+  # Account for heteroskedasticity
+  robust <- coeftest(reg,
+                     vcov = vcovHC(reg,"HC1"))
+  print("Model estimates after implementing robust standard errors")
+  print(robust)
+  rm(reg, mse, pred)
+  return(robust)
+}
+
+# Regression of outcomes on predictors without accounting
+# for weighting in standard OLS.
+gnhlth.ols <- run.ols(train, test, "PROP_GOOD_GENHLTH",
+                       NULL, FALSE)
+ovrhlth.ols <- run.ols(train, test, "PROP_POOR_OVR_HLTH",
+                       NULL, FALSE)
+phys.ols <- run.ols(train, test, "PROP_PHYS_DISTRESS",
+                    NULL, FALSE)
+ment.ols <- run.ols(train, test, "PROP_MENT_DISTRESS",
+                    NULL, FALSE)
+hlthpln.ols <- run.ols(train, test, "PROP_HLTHPLN",
+                       NULL, FALSE)
+persdoc.ols <- run.ols(train, test, "PROP_HAS_PERSDOC",
+                       NULL, FALSE)
+medcost.ols <- run.ols(train, test, "PROP_MEDCOST",
+                       NULL, FALSE)
+checkup.ols <- run.ols(train, test, "PROP_ANNUAL_CHECKUP",
+                       NULL, FALSE)
+# Regression of outcomes on predictors accounting for
+# weighting in standard OLS
+weight.vect <- train$REWEIGHT
+gnhlth.wgt.ols <- run.ols(train, test, "PROP_GOOD_GENHLTH",
+                           weight.vect, FALSE)
+ovrhlth.wgt.ols <- run.ols(train, test, "PROP_POOR_OVR_HLTH",
+                           weight.vect, FALSE)
+phys.wgt.ols <- run.ols(train, test, "PROP_PHYS_DISTRESS",
+                       weight.vect, FALSE)
+ment.wgt.ols <- run.ols(train, test, "PROP_MENT_DISTRESS",
+                        weight.vect, FALSE)
+hlthpln.wgt.ols <- run.ols(train, test, "PROP_HLTHPLN",
+                           weight.vect, FALSE)
+persdoc.wgt.ols <- run.ols(train, test, "PROP_HAS_PERSDOC",
+                           weight.vect, FALSE)
+medcost.wgt.ols <- run.ols(train, test, "PROP_MEDCOST",
+                           weight.vect, FALSE)
+checkup.wgt.ols <- run.ols(train, test, "PROP_ANNUAL_CHECKUP",
+                           weight.vect, FALSE)
+```
+NOTE: 
+  * Physical distress proportion does not appear to adhere to assumption of linearity between response and predictors (see the residuals versus fitted plot for this outcome).
+  * The standardized residuals do not appear to be normally distributed amongst any of the outcomes.
+  * Heteroskedasticity appears to be present in each model, but is accounted for via usage of robust standard errors.
+  * Weighted models appear to suffer from essentially the same issues, although estimates do differ non-trivially and significance of the DiD estimator can vary and is no always significant at the 0.001 level.
+
+
+The initial analysis was conducted without accounting for survey weighting, and the subsequent analysis that did account for weights did not do so within a survey design, primarily as a means of checking robustness. We now proceed with re-conducting the analysis, this time accounting for those survey weights within a survey design framework, as is more traditional within the literature (REWEIGHT is the variable in this data set that contains weighting information, and was constructed as specified according to BRFSS documentation when working with multiple years of BRFSS data)
+
+``` {r}
+# Create survey design object of brfss data
+options(survey.lonely.psu="adjust")
+brfss.design <- svydesign(
+  id=~1,
+  strata=~STSTR,
+  weights=~REWEIGHT,
+  data=complete
+)
+
+# Define function to run a weighted regression on survey data.
+run.weighted.reg <- function(svy_design, outcome, simple){
+  form.string <- get.formula(outcome, simple)
+  form <- as.formula(form.string)
+  base <- "Conducting analysis for"
+  statement <- paste(base, outcome, sep = " ")
+  print(statement)
+  reg <- svyglm(form, design = svy_design)
+  print("Model summary given below")
+  print(summary(reg))
+  print("Visualizing residual versus fitted values")
+  plot(reg, which = 1)
+  print("Checking the distribution of the residuals")
+  plot(reg, which = 2)
+  print("Checking the variance of the residuals")
+  plot(reg, which = 3)
+  print("Testing for multicollinearity amongst the variables")
+  print(vif(reg))
+  return(reg)
+}
+
+# Run Regressions of outcomes on predictors with a survey
+# design.
+gnhlth.svy <- run.weighted.reg(brfss.design,
+                               "PROP_GOOD_GENHLTH", FALSE)
+phys.svy <- run.weighted.reg(brfss.design,
+                             "PROP_PHYS_DISTRESS", FALSE)
+ment.svy <- run.weighted.reg(brfss.design,
+                             "PROP_MENT_DISTRESS", FALSE)
+ovrhlth.svy <- run.weighted.reg(brfss.design,
+                                "PROP_POOR_OVR_HLTH", FALSE)
+hlthpln.svy <- run.weighted.reg(brfss.design,
+                                "PROP_HLTHPLN", FALSE)
+persdoc.svy <- run.weighted.reg(brfss.design,
+                                "PROP_HAS_PERSDOC", FALSE)
+medcost.svy <- run.weighted.reg(brfss.design,
+                                "PROP_MEDCOST", FALSE)
+checkup.svy <- run.weighted.reg(brfss.design,
+                                "PROP_ANNUAL_CHECKUP", FALSE)
+```
+NOTE:
+  * Physical Distress appears to violate linear relationship between predictors and response.
+
+We now use LASSO regression on our model to try and alleviate any overfitting errors and to attempt to ascertain which predictors are most relevant to the outcome.
+
+``` {r}
+run.lasso <- function(x.train, x.test, y.train,
+                      y.test, outcome, penalty,
+                      weight){
+  base <- "Conducting LASSO analysis for"
+  statement <- paste(base, outcome, sep = " ")
+  print(statement)
+  lambdas <- 10^seq(2, -3, by=-.1)
+  lasso <- cv.glmnet(x.train, y.train, alpha=penalty,
+                     lambda = lambdas, nfolds = 5,
+                     weights = weight)
+  best.lam <- lasso$lambda.min
+  print("Optimal penalty parameter is:")
+  print(best.lam)
+  best.reg <- glmnet(x.train, y.train, alpha=penalty,
+                     lambda = best.lam)
+  print("model summary is given below:")
+  print(coef(best.reg))
+  pred <- predict(best.reg, x.test, s = "lambda.min")
+  mse <- mean((pred - y.test) ^ 2)
+  print("Model MSE is:")
+  print(mse)
+  return(best.reg)
+}
+
+# Create function to compute model matrix of features
+# for LASSO regressions, both with and without covariates.
+get.lasso.feats <- function(data, simple){
+  if (isTRUE(simple)){
+    feat.vars <- c("TREAT_EARLY", "TREAT_LATE",
+                   "TIME_EARLY", "TIME_LATE")
+    vars.feat <- data[feat.vars]
+    feats <- model.matrix(~
+                            (as.factor(TREAT_EARLY) *
+                               as.factor(TIME_EARLY)) +
+                            (as.factor(TREAT_LATE) *
+                            as.factor(TIME_LATE)),
+                            vars.feat)
+    return(feats)
+  }
+  feat.vars <- c("NUMADULT", "MARITAL", "INCOME", "RENT",
+               "CHILDREN", "AGE", "SEX", "EMPLOY", "RACE",
+               "TREAT_EARLY", "TREAT_LATE", "TIME_EARLY",
+               "TIME_LATE")
+  vars.feat <- data[feat.vars]
+  feats <- model.matrix(~ NUMADULT + as.factor(MARITAL) +
+                              as.factor(INCOME) +
+                              as.factor(RENT) + CHILDREN +
+                              as.factor(AGE) +
+                              as.factor(SEX) +
+                              as.factor(EMPLOY) +
+                              as.factor(RACE) +
+            (as.factor(TREAT_EARLY) * as.factor(TIME_EARLY)) +
+              (as.factor(TREAT_LATE) * as.factor(TIME_LATE)),
+            vars.feat)
+  return(feats)
+}
+# Get features matrices for lasso regressions, for both
+# training and testing, with covariates included.
+lasso.x.train <- get.lasso.feats(train, FALSE)
+lasso.x.test <- get.lasso.feats(test, FALSE)
+
+# Get outcomes for training.
+lasso.genhlth.train <- train$PROP_GOOD_GENHLTH
+lasso.medcost.train <- train$PROP_MEDCOST
+lasso.hlthpln.train <- train$PROP_HLTHPLN
+lasso.poorhlth.train <- train$PROP_POOR_OVR_HLTH
+lasso.persdoc.train <- train$PROP_HAS_PERSDOC
+lasso.phys.distress.train <- train$PROP_PHYS_DISTRESS
+lasso.ment.distress.train <- train$PROP_MENT_DISTRESS
+lasso.checkup.train <- train$PROP_ANNUAL_CHECKUP
+# Get outcomes for testing.
+lasso.genhlth.test <- test$PROP_GOOD_GENHLTH
+lasso.medcost.test <- test$PROP_MEDCOST
+lasso.hlthpln.test <- test$PROP_HLTHPLN
+lasso.poorhlth.test <- test$PROP_POOR_OVR_HLTH
+lasso.persdoc.test <- test$PROP_HAS_PERSDOC
+lasso.phys.distress.test <- test$PROP_PHYS_DISTRESS
+lasso.ment.distress.test <- test$PROP_MENT_DISTRESS
+lasso.checkup.test <- test$PROP_ANNUAL_CHECKUP
+
+# Run Lasso regressions, first unweighted
+gnhlth.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                          lasso.genhlth.train,
+                          lasso.genhlth.test,
+                          "PROP_GOOD_GENHLTH", 1, NULL)
+checkup.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                           lasso.checkup.train,
+                           lasso.checkup.test,
+                           "PROP_ANNUAL_CHECKUP", 1, NULL)
+hlthpln.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                           lasso.hlthpln.train,
+                           lasso.hlthpln.test,
+                           "PROP_HLTHPLN", 1, NULL)
+medcost.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                           lasso.medcost.train,
+                           lasso.medcost.test,
+                           "PROP_MEDCOST", 1, NULL)
+ment.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                        lasso.ment.distress.train,
+                        lasso.ment.distress.test,
+                        "PROP_MENT_DISTRESS", 1, NULL)
+phys.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                        lasso.phys.distress.train,
+                        lasso.phys.distress.test,
+                        "PROP_PHYS_DISTRESS", 1, NULL)
+persdoc.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                           lasso.persdoc.train,
+                           lasso.persdoc.test,
+                           "PROP_HAS_PERSDOC", 1, NULL)
+ovrhlth.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                           lasso.poorhlth.train, 
+                           lasso.poorhlth.test,
+                           "PROP_POOR_OVR_HLTH", 1, NULL)
+
+# run lasso regressions with weights included.
+gnhlth.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                              lasso.genhlth.train,
+                              lasso.genhlth.test,
+                              "PROP_GOOD_GENHLTH", 1,
+                              weight.vect)
+checkup.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                               lasso.checkup.train,
+                               lasso.checkup.test,
+                               "PROP_ANNUAL_CHECKUP", 1,
+                               weight.vect)
+hlthpln.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                               lasso.hlthpln.train,
+                               lasso.hlthpln.test,
+                               "PROP_HLTHPLN", 1, weight.vect)
+medcost.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                               lasso.medcost.train,
+                               lasso.medcost.test,
+                               "PROP_MEDCOST", 1, weight.vect)
+ment.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                            lasso.ment.distress.train,
+                            lasso.ment.distress.test,
+                            "PROP_MENT_DISTRESS", 1,
+                            weight.vect)
+phys.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                            lasso.phys.distress.train,
+                            lasso.phys.distress.test,
+                            "PROP_PHYS_DISTRESS", 1,
+                            weight.vect)
+persdoc.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                               lasso.persdoc.train,
+                               lasso.persdoc.test,
+                               "PROP_HAS_PERSDOC", 1,
+                               weight.vect)
+ovrhlth.wgt.lasso <- run.lasso(lasso.x.train, lasso.x.test,
+                               lasso.poorhlth.train, 
+                               lasso.poorhlth.test,
+                               "PROP_POOR_OVR_HLTH", 1,
+                               weight.vect)
+```
+We see from the above that the LASSO regression only retained the DiD estimators for the outcomes of PROP_ANNUAL_CHECKUP (only in the case of the earlier treatment group), and PROP_PHYS_DISTRESS (only in the case of the later treatment group). All other outcomes had the estimators be driven to 0.
+
+Now conduct elastic net regularization to get a blend of both Ridge and Lasso Regressions and observe change in model estimates. Doing so should help for implementation of some regularization methods, while also trying to avoid the reduction of many coefficients to 0.
+
+``` {r}
+# Define function to conduct elastic net regression.
+run.elastic.net <- function(train, test, outcome, simple,
+                            weight){
+  form.string <- get.formula(outcome, simple)
+  form <- as.formula(form.string)
+  base <- "Conducting Elastic-net analysis for"
+  statement <- paste(base, outcome, sep = " ")
+  print(statement)
+  fit.control <- trainControl(method = "repeatedcv",
+                              number = 5,
+                              repeats = 10)
+  fit <- train(form, data = train, method = "glmnet",
+               trControl = fit.control, weights = weight)
+  print("Optimal alpha value is:")
+  print(fit$bestTune$alpha)
+  print("Optimal lambda value is:")
+  print(fit$bestTune$lambda)
+  pred <- predict(fit, test)
+  mse <- mean((pred - test[, outcome]) ^ 2)
+  print("Model MSE is:")
+  print(mse)
+  print("Coefficients for optimal tuning parameters are:")
+  print(coef(fit$finalModel, fit$bestTune$lambda))
+  return(fit)
+}
+
+# Run elastic net regressions, first without weighting.
+gnhlth.elast <- run.elastic.net(train, test,
+                                "PROP_GOOD_GENHLTH", FALSE,
+                                NULL)
+ovrhlth.elast <- run.elastic.net(train, test,
+                                 "PROP_POOR_OVR_HLTH", FALSE,
+                                 NULL)
+phys.elast <- run.elastic.net(train, test,
+                              "PROP_PHYS_DISTRESS", FALSE,
+                              NULL)
+ment.elast <- run.elastic.net(train, test,
+                              "PROP_MENT_DISTRESS", FALSE,
+                              NULL)
+hlthpln.elast <- run.elastic.net(train, test, "PROP_HLTHPLN",
+                                 FALSE, NULL)
+persdoc.elast <- run.elastic.net(train, test,
+                                 "PROP_HAS_PERSDOC", FALSE,
+                                 NULL)
+medcost.elast <- run.elastic.net(train, test, "PROP_MEDCOST",
+                                 FALSE, NULL)
+checkup.elast <- run.elastic.net(train, test, 
+                                 "PROP_ANNUAL_CHECKUP", FALSE,
+                                 NULL)
+
+# Run elastic net regressions, now with weighting.
+gnhlth.wgt.elast <- run.elastic.net(train, test, 
+                                    "PROP_GOOD_GENHLTH", FALSE,
+                                    weight.vect)
+ovrhlth.wgt.elast <- run.elastic.net(train, test,
+                                     "PROP_POOR_OVR_HLTH", 
+                                     FALSE,
+                                     weight.vect)
+phys.wgt.elast <- run.elastic.net(train, test,
+                                  "PROP_PHYS_DISTRESS", FALSE,
+                                  weight.vect)
+ment.wgt.elast <- run.elastic.net(train, test, 
+                                  "PROP_MENT_DISTRESS", FALSE,
+                                  weight.vect)
+hlthpln.wgt.elast <- run.elastic.net(train, test, 
+                                     "PROP_HLTHPLN", FALSE,
+                                     weight.vect)
+persdoc.wgt.elast <- run.elastic.net(train, test,
+                                     "PROP_HAS_PERSDOC", FALSE,
+                                     weight.vect)
+medcost.wgt.elast <- run.elastic.net(train, test, 
+                                     "PROP_MEDCOST", FALSE,
+                                     weight.vect)
+checkup.wgt.elast <- run.elastic.net(train, test, 
+                                     "PROP_ANNUAL_CHECKUP", 
+                                     FALSE,
+                                     weight.vect)
+```
+We can see that most models under elastic-net regularization tend to have an alpha value that is closer to 0, indicating we have more of a ridge regression where coefficients are being pushed towards zero, versus a LASSO which would drive coefficients entirely to 0. Some coefficients do still end up being omitted in all of these models, but many more remain in relative to the previously ran LASSO regressions.
+
+
+Now, we turn to addressing the violation of the parallel trends assumption for some outcomes. For the sake of robustness, we will apply this methodology to all outcomes, regardless of whether it appeared that they satisfied the assumption or not. To alleviate this issue, we will utilize propensity score matching to make our treatment and control groups as similar as possible. Research has indicated that this methodology results in a more consistent and reliable difference-in-differences estimator. After conducting propensity score matching, interpretation of the coefficient does change slightly to represent the average treatment effect on the treated.
+
+``` {r}
+# First, for the purpose of propensity score matching,
+# turn treatment into a multinomial variable, those
+# with early treatment will be EARLY, those with late
+# will be LATE, Control group states are CONTROL.
+complete$TREATMENT <- ifelse(complete$TREAT_EARLY == 1,
+                             "EARLY",
+                      ifelse(complete$TREAT_LATE == 1,
+                             "LATE", "CONTROL"))
+typeof(complete$TREATMENT)
+# Get matching data from regressing treatment on covariates,
+# use sampling weights for matching.
+weighted.brfss <- weightit(TREATMENT ~ (NUMADULT +
+                            as.factor(MARITAL) +
+                            as.factor(INCOME) +
+                            as.factor(RENT) + CHILDREN +
+                            as.factor(AGE) +
+                            as.factor(SEX) +
+                            as.factor(EMPLOY) +
+                            as.factor(RACE)), data = complete,
+                           method = "ps")
+
+# Summary of propensity score weights
+summary(weighted.brfss)
+# View covariate balance amongst groups
+bal.tab(weighted.brfss)
+# Create final weight representative of product of sampling
+# weight and score weights.
+complete$FINAL_WEIGHT <-
+  complete$REWEIGHT * weighted.brfss$weights
+# Re-obtain training and testing splits with final weights.
+train <- complete[train.index, ]
+test <- complete[-train.index, ]
+
+# Run OLS regressions on matched data, using refined weights,
+# including covariates.
+refined.weight <- train$FINAL_WEIGHT
+gnhlth.matched.cov.ols <- run.ols(train, test,
+                                  "PROP_GOOD_GENHLTH",
+                                  refined.weight, FALSE)
+ovrhlth.matched.cov.ols <- run.ols(train, test,
+                                   "PROP_POOR_OVR_HLTH",
+                                   refined.weight, FALSE)
+phys.matched.cov.ols <- run.ols(train, test,
+                                "PROP_PHYS_DISTRESS",
+                                refined.weight, FALSE)
+ment.matched.cov.ols <- run.ols(train, test,
+                                "PROP_MENT_DISTRESS",
+                                refined.weight, FALSE)
+hlthpln.matched.cov.ols <- run.ols(train, test, "PROP_HLTHPLN",
+                                   refined.weight, FALSE)
+persdoc.matched.cov.ols <- run.ols(train, test,
+                                   "PROP_HAS_PERSDOC",
+                                   refined.weight, FALSE)
+medcost.matched.cov.ols <- run.ols(train, test, "PROP_MEDCOST",
+                                   refined.weight, FALSE)
+checkup.matched.cov.ols <- run.ols(train, test,
+                                   "PROP_ANNUAL_CHECKUP",
+                                   refined.weight, FALSE)
+
+# Run OLS regressions on matched data with refined weights,
+# excluding covariates.
+gnhlth.matched.ols <- run.ols(train, test, "PROP_GOOD_GENHLTH",
+                              refined.weight, TRUE)
+ovrhlth.matched.ols <- run.ols(train, test,
+                               "PROP_POOR_OVR_HLTH",
+                               refined.weight, TRUE)
+phys.matched.ols <- run.ols(train, test, "PROP_PHYS_DISTRESS",
+                            refined.weight, TRUE)
+ment.matched.ols <- run.ols(train, test,
+                           "PROP_MENT_DISTRESS",
+                           refined.weight, TRUE)
+hlthpln.matched.ols <- run.ols(train, test, "PROP_HLTHPLN",
+                               refined.weight, TRUE)
+persdoc.matched.ols <- run.ols(train, test, "PROP_HAS_PERSDOC",
+                               refined.weight, TRUE)
+medcost.matched.ols <- run.ols(train, test, "PROP_MEDCOST",
+                               refined.weight, TRUE)
+checkup.matched.ols <- run.ols(train, test,
+                               "PROP_ANNUAL_CHECKUP",
+                               refined.weight, TRUE)
+
+# Create matched data survey object
+matched.design <- svydesign(
+  id=~1,
+  strata=~STSTR,
+  weights=~FINAL_WEIGHT,
+  data=complete
+)
+
+# Run regressions of outcomes on predictors with a matched
+# survey design, first with covariates.
+gnhlth.matched.cov.svy <- run.weighted.reg(matched.design,
+                                           "PROP_GOOD_GENHLTH",
+                                           FALSE)
+phys.matched.cov.svy <- run.weighted.reg(matched.design,
+                                         "PROP_PHYS_DISTRESS",
+                                         FALSE)
+ment.matched.cov.svy <- run.weighted.reg(matched.design,
+                                         "PROP_MENT_DISTRESS",
+                                         FALSE)
+ovrhlth.matched.cov.svy <- run.weighted.reg(matched.design,
+                                         "PROP_POOR_OVR_HLTH",
+                                         FALSE)
+hlthpln.matched.cov.svy <- run.weighted.reg(matched.design,
+                                            "PROP_HLTHPLN",
+                                            FALSE)
+persdoc.matched.cov.svy <- run.weighted.reg(matched.design,
+                                            "PROP_HAS_PERSDOC",
+                                            FALSE)
+medcost.matched.cov.svy <- run.weighted.reg(matched.design,
+                                            "PROP_MEDCOST",
+                                            FALSE)
+checkup.matched.cov.svy <- run.weighted.reg(matched.design,
+                                         "PROP_ANNUAL_CHECKUP",
+                                         FALSE)
+
+# Run same regressions, this time without covariates.
+gnhlth.matched.svy <- run.weighted.reg(matched.design,
+                                       "PROP_GOOD_GENHLTH",
+                                       TRUE)
+phys.matched.svy <- run.weighted.reg(matched.design,
+                                     "PROP_PHYS_DISTRESS",
+                                     TRUE)
+ment.matched.svy <- run.weighted.reg(matched.design,
+                                     "PROP_MENT_DISTRESS",
+                                     TRUE)
+ovrhlth.matched.svy <- run.weighted.reg(matched.design,
+                                        "PROP_POOR_OVR_HLTH",
+                                        TRUE)
+hlthpln.matched.svy <- run.weighted.reg(matched.design,
+                                        "PROP_HLTHPLN", TRUE)
+persdoc.matched.svy <- run.weighted.reg(matched.design,
+                                        "PROP_HAS_PERSDOC",
+                                        TRUE)
+medcost.matched.svy <- run.weighted.reg(matched.design,
+                                        "PROP_MEDCOST", TRUE)
+checkup.matched.svy <- run.weighted.reg(matched.design,
+                                        "PROP_ANNUAL_CHECKUP",
+                                        TRUE)
+
+# Get features matrices for lasso regressions, for both
+# training and testing, with covariates included and without.
+lasso.x.train <- get.lasso.feats(train, FALSE)
+lasso.x.test <- get.lasso.feats(test, FALSE)
+lasso.x.train.simple <- get.lasso.feats(train, TRUE)
+lasso.x.test.simple <- get.lasso.feats(test, TRUE)
+
+# Get outcomes for training.
+lasso.genhlth.train <- train$PROP_GOOD_GENHLTH
+lasso.medcost.train <- train$PROP_MEDCOST
+lasso.hlthpln.train <- train$PROP_HLTHPLN
+lasso.poorhlth.train <- train$PROP_POOR_OVR_HLTH
+lasso.persdoc.train <- train$PROP_HAS_PERSDOC
+lasso.phys.distress.train <- train$PROP_PHYS_DISTRESS
+lasso.ment.distress.train <- train$PROP_MENT_DISTRESS
+lasso.checkup.train <- train$PROP_ANNUAL_CHECKUP
+# Get outcomes for testing.
+lasso.genhlth.test <- test$PROP_GOOD_GENHLTH
+lasso.medcost.test <- test$PROP_MEDCOST
+lasso.hlthpln.test <- test$PROP_HLTHPLN
+lasso.poorhlth.test <- test$PROP_POOR_OVR_HLTH
+lasso.persdoc.test <- test$PROP_HAS_PERSDOC
+lasso.phys.distress.test <- test$PROP_PHYS_DISTRESS
+lasso.ment.distress.test <- test$PROP_MENT_DISTRESS
+lasso.checkup.test <- test$PROP_ANNUAL_CHECKUP
+
+# Run LASSO regressions on matched data, first with covariates.
+gnhlth.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                      lasso.x.test,
+                                      lasso.genhlth.train,
+                                      lasso.genhlth.test,
+                                      "PROP_GOOD_GENHLTH", 1,
+                                      refined.weight)
+checkup.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                       lasso.x.test,
+                                       lasso.checkup.train,
+                                       lasso.checkup.test,
+                                       "PROP_ANNUAL_CHECKUP",
+                                       1, refined.weight)
+hlthpln.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                       lasso.x.test,
+                                       lasso.hlthpln.train,
+                                       lasso.hlthpln.test,
+                                       "PROP_HLTHPLN", 1,
+                                       refined.weight)
+medcost.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                       lasso.x.test,
+                                       lasso.medcost.train,
+                                       lasso.medcost.test,
+                                       "PROP_MEDCOST", 1,
+                                       refined.weight)
+ment.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                    lasso.x.test,
+                                    lasso.ment.distress.train,
+                                    lasso.ment.distress.test,
+                                    "PROP_MENT_DISTRESS", 1,
+                                    refined.weight)
+phys.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                    lasso.x.test,
+                                    lasso.phys.distress.train,
+                                    lasso.phys.distress.test,
+                                    "PROP_PHYS_DISTRESS", 1,
+                                    refined.weight)
+persdoc.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                       lasso.x.test,
+                                       lasso.persdoc.train,
+                                       lasso.persdoc.test,
+                                       "PROP_HAS_PERSDOC", 1,
+                                       refined.weight)
+ovrhlth.matched.cov.lasso <- run.lasso(lasso.x.train,
+                                       lasso.x.test,
+                                       lasso.poorhlth.train, 
+                                       lasso.poorhlth.test,
+                                       "PROP_POOR_OVR_HLTH",
+                                       1,
+                                       refined.weight)
+
+# Run LASSO regressions on matched data, now without the
+# covariates.
+gnhlth.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                  lasso.x.test.simple,
+                                  lasso.genhlth.train,
+                                  lasso.genhlth.test,
+                                  "PROP_GOOD_GENHLTH", 1,
+                                  refined.weight)
+checkup.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                   lasso.x.test.simple,
+                                   lasso.checkup.train,
+                                   lasso.checkup.test,
+                                   "PROP_ANNUAL_CHECKUP", 1,
+                                   refined.weight)
+hlthpln.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                   lasso.x.test.simple,
+                                   lasso.hlthpln.train,
+                                   lasso.hlthpln.test,
+                                   "PROP_HLTHPLN", 1,
+                                   refined.weight)
+medcost.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                   lasso.x.test.simple,
+                                   lasso.medcost.train,
+                                   lasso.medcost.test,
+                                   "PROP_MEDCOST", 1,
+                                   refined.weight)
+ment.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                lasso.x.test.simple,
+                                lasso.ment.distress.train,
+                                lasso.ment.distress.test,
+                                "PROP_MENT_DISTRESS", 1,
+                                refined.weight)
+phys.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                lasso.x.test.simple,
+                                lasso.phys.distress.train,
+                                lasso.phys.distress.test,
+                                "PROP_PHYS_DISTRESS", 1,
+                                refined.weight)
+persdoc.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                   lasso.x.test.simple,
+                                   lasso.persdoc.train,
+                                   lasso.persdoc.test,
+                                   "PROP_HAS_PERSDOC", 1,
+                                   refined.weight)
+ovrhlth.matched.lasso <- run.lasso(lasso.x.train.simple,
+                                   lasso.x.test.simple,
+                                   lasso.poorhlth.train, 
+                                   lasso.poorhlth.test,
+                                   "PROP_POOR_OVR_HLTH", 1,
+                                   refined.weight)
+
+# Run elastic net regressions on matched data, first with
+# covariates
+gnhlth.matched.cov.elast <- run.elastic.net(train, test,
+                                           "PROP_GOOD_GENHLTH",
+                                           FALSE,
+                                           refined.weight)
+ovrhlth.matched.cov.elast <- run.elastic.net(train, test,
+                                          "PROP_POOR_OVR_HLTH",
+                                          FALSE,
+                                          refined.weight)
+phys.matched.cov.elast <- run.elastic.net(train, test,
+                                          "PROP_PHYS_DISTRESS",
+                                          FALSE,
+                                          refined.weight)
+ment.matched.cov.elast <- run.elastic.net(train, test,
+                                          "PROP_MENT_DISTRESS",
+                                          FALSE,
+                                          refined.weight)
+hlthpln.matched.cov.elast <- run.elastic.net(train, test,
+                                             "PROP_HLTHPLN",
+                                             FALSE,
+                                             refined.weight)
+persdoc.matched.cov.elast <- run.elastic.net(train, test,
+                                            "PROP_HAS_PERSDOC",
+                                            FALSE,
+                                            refined.weight)
+medcost.matched.cov.elast <- run.elastic.net(train, test,
+                                             "PROP_MEDCOST",
+                                             FALSE,
+                                             refined.weight)
+checkup.matched.cov.elast <- run.elastic.net(train, test,                                           "PROP_ANNUAL_CHECKUP",
+                                             FALSE,
+                                             refined.weight)
+
+# Run elastic net regressions on matched data, now without
+# covariates
+gnhlth.matched.elast <- run.elastic.net(train, test,
+                                        "PROP_GOOD_GENHLTH",
+                                        TRUE, refined.weight)
+ovrhlth.matched.elast <- run.elastic.net(train, test,
+                                         "PROP_POOR_OVR_HLTH",
+                                         TRUE, refined.weight)
+phys.matched.elast <- run.elastic.net(train, test,
+                                      "PROP_PHYS_DISTRESS",
+                                      TRUE, refined.weight)
+ment.matched.elast <- run.elastic.net(train, test,
+                                      "PROP_MENT_DISTRESS",
+                                      TRUE, refined.weight)
+hlthpln.matched.elast <- run.elastic.net(train, test,
+                                         "PROP_HLTHPLN", TRUE,
+                                         refined.weight)
+persdoc.matched.elast <- run.elastic.net(train, test,
+                                         "PROP_HAS_PERSDOC",
+                                         TRUE, refined.weight)
+medcost.matched.elast <- run.elastic.net(train, test,
+                                         "PROP_MEDCOST", TRUE,
+                                         refined.weight)
+checkup.matched.elast <- run.elastic.net(train, test,
+                                         "PROP_ANNUAL_CHECKUP",
+                                         TRUE, refined.weight)
+```
+
+``` {r}
+# Write a function that creates matrices to show coefficients
+# (and standard errors where applicable) of each outcome for
+# each model.
+
+get.matrix <- function(ols, ols.weighted, lasso,
+                       lasso.weighted, survey,
+                       elastic, elastic.weighted,
+                       matched.cov.ols, matched.ols,
+                       matched.cov.lasso, matched.lasso,
+                       matched.cov.elastic, matched.elastic,
+                       matched.cov.survey, matched.survey){
+  # Get unweighted OLS estimator coefficient and standard
+  # errors.
+  early.ols.coef <-
+  ols[, 1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.ols.se <-
+    ols[,2]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  # Get weighted OLS estimator coefficient and standard
+  # errors.
+  early.ols.wgt.coef <- 
+  ols.weighted[,1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.ols.wgt.se <-
+  ols.weighted[,2]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  # Get coefficients for early DiD estimator for LASSO, for
+  # unweighted and weighted.
+  early.lasso.coef <-
+    coef(lasso["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"])
+  early.lasso.wgt.coef <-
+    coef(lasso.weighted["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"])
+  if (is.null(early.lasso.coef)){
+    early.lasso.coef[1] <- 0
+  }
+  if (is.null(early.lasso.wgt.coef)) {
+    early.lasso.wgt.coef[1] <- 0
+  }
+  # Get elastic-net model early estimator coefficients, both
+  # unweighted and weighted.
+  elast.coefs <- 
+    coef(elastic$finalModel, elastic$bestTune$lambda)
+  early.elast.coef <-
+    elast.coefs[,1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  elast.wgt.coefs <- coef(elastic.weighted$finalModel,
+                          elastic.weighted$bestTune$lambda)
+  early.elast.wgt.coef <- 
+    elast.wgt.coefs[,1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  # Get survey model coefficients & standard errors.
+  early.svy.coef <-
+    coef(survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.svy.se <- 
+    SE(survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  # Get matched data OLS coefficients & standard errors, for 
+  # with and for without covariates.
+  early.matched.cov.ols.coef <- 
+    coef(matched.cov.ols)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.matched.cov.ols.se <- 
+    matched.cov.ols[,2]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  early.matched.ols.coef <- 
+    coef(matched.ols)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.matched.ols.se <- 
+    matched.ols[,2]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  # Get matched data LASSO coefficients, for both with and
+  # without covariates.
+  early.matched.cov.lasso.coef <- 
+    coef(matched.cov.lasso["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"])
+  early.matched.lasso.coef <- 
+    coef(matched.lasso["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"])
+
+  if (is.null(early.matched.cov.lasso.coef)){
+    early.matched.cov.lasso.coef[1] <- 0
+  }
+  if (is.null(early.matched.lasso.coef)){
+    early.matched.lasso.coef[1] <- 0
+  }
+  
+  # Get matched data survey model coefficients and standard
+  # errors, for both with and without covariates.
+  early.matched.cov.svy.coef <- 
+    coef(matched.cov.survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.matched.cov.svy.se <- 
+    SE(matched.cov.survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  early.matched.svy.coef <- 
+    coef(matched.survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+  early.matched.svy.se <- 
+    SE(matched.survey)["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  # Get elastic-net model coefficients, both with and without
+  # covariates.
+  matched.cov.elast.coefs <- 
+    coef(matched.cov.elastic$finalModel,
+       matched.cov.elastic$bestTune$lambda)
+  early.matched.cov.elastic.coef <- 
+    matched.cov.elast.coefs[,1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  matched.elast.coefs <- 
+    coef(matched.elastic$finalModel,
+         matched.elastic$bestTune$lambda)
+  early.matched.elastic.coef <- 
+    matched.elast.coefs[,1]["as.factor(TREAT_EARLY)1:as.factor(TIME_EARLY)1"]
+
+  early.matrix <- rbind(early.ols.coef, early.ols.se,
+                        early.ols.wgt.coef, early.ols.wgt.se, 
+                        early.svy.coef, early.svy.se,
+                        early.lasso.coef,
+                        early.lasso.wgt.coef,
+                        early.elast.coef,
+                        early.elast.wgt.coef, 
+                        early.matched.cov.ols.coef,
+                        early.matched.cov.ols.se, 
+                        early.matched.ols.coef,
+                        early.matched.ols.se,
+                        early.matched.cov.svy.coef,
+                        early.matched.cov.svy.se,
+                        early.matched.svy.coef,
+                        early.matched.svy.se,
+                        early.matched.cov.lasso.coef,
+                        early.matched.lasso.coef,
+                        early.matched.cov.elastic.coef,
+                        early.matched.elastic.coef)
+  rownames(early.matrix) <- c("OLS coef", "OLS SE",
+                              "Weighted OLS coef",
+                              "Weighted OLS SE",
+                              "Survey coef", "Survey SE",
+                              "LASSO coef",
+                              "Weighted LASSO coef",
+                              "Elastic-net coef",
+                              "Weighted Elastic-net coef",
+                              "PSM OLS coef (Covariates)",
+                              "PSM OLS SE (Covariates)",
+                              "PSM OLS coef", "PSM OLS SE",
+                              "PSM Survey coef (covariates)",
+                              "PSM Survey SE (covariates)",
+                              "PSM Survey coef",
+                              "PSM Survey SE",
+                              "PSM LASSO coef (covariates)",
+                              "PSM LASSO coef",
+                          "PSM Elastic-net coef (covariates)",
+                          "PSM Elastic-net coefs")
+  colnames(early.matrix) <- c("TREAT_EARLY * TIME_EARLY")
+
+  # Repeat process for later DiD estimator
+  late.ols.coef <-
+  ols[, 1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.ols.se <-
+    ols[,2]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  # Get weighted OLS estimator coefficient and standard
+  # errors.
+  late.ols.wgt.coef <- 
+  ols.weighted[,1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.ols.wgt.se <-
+  ols.weighted[,2]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  # Get coefficients for late DiD estimator for LASSO, for
+  # unweighted and weighted.
+  late.lasso.coef <-
+    coef(lasso["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"])
+  late.lasso.wgt.coef <-
+    coef(lasso.weighted["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"])
+  if (is.null(late.lasso.coef)){
+    late.lasso.coef[1] <- 0
+  }
+  if (is.null(late.lasso.wgt.coef)) {
+    late.lasso.wgt.coef[1] <- 0
+  }
+  # Get elastic-net model late estimator coefficients, both
+  # unweighted and weighted.
+  late.elast.coef <-
+    elast.coefs[,1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.elast.wgt.coef <- 
+    elast.wgt.coefs[,1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  # Get survey model coefficients & standard errors.
+  late.svy.coef <-
+    coef(survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.svy.se <- 
+    SE(survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  # Get matched data OLS coefficients & standard errors, for 
+  # with and for without covariates.
+  late.matched.cov.ols.coef <- 
+    coef(matched.cov.ols)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.matched.cov.ols.se <- 
+    matched.cov.ols[,2]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  late.matched.ols.coef <- 
+    coef(matched.ols)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.matched.ols.se <- 
+    matched.ols[,2]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  # Get matched data LASSO coefficients, for both with and
+  # without covariates.
+  late.matched.cov.lasso.coef <- 
+    coef(matched.cov.lasso["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"])
+  late.matched.lasso.coef <- 
+    coef(matched.lasso["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"])
+
+  if (is.null(late.matched.cov.lasso.coef)){
+    late.matched.cov.lasso.coef[1] <- 0
+  }
+  if (is.null(late.matched.lasso.coef)){
+    late.matched.lasso.coef[1] <- 0
+  }
+  
+  # Get matched data survey model coefficients and standard
+  # errors, for both with and without covariates.
+  late.matched.cov.svy.coef <- 
+    coef(matched.cov.survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.matched.cov.svy.se <- 
+    SE(matched.cov.survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  late.matched.svy.coef <- 
+    coef(matched.survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+  late.matched.svy.se <- 
+    SE(matched.survey)["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  # Get elastic-net model coefficients, both with and without
+  # covariates.
+  late.matched.cov.elastic.coef <- 
+    matched.cov.elast.coefs[,1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  late.matched.elastic.coef <- 
+    matched.elast.coefs[,1]["as.factor(TREAT_LATE)1:as.factor(TIME_LATE)1"]
+
+  late.matrix <- rbind(late.ols.coef, late.ols.se,
+                       late.ols.wgt.coef, late.ols.wgt.se, 
+                      late.svy.coef, late.svy.se,
+                      late.lasso.coef, late.lasso.wgt.coef, 
+                      late.elast.coef, late.elast.wgt.coef, 
+                      late.matched.cov.ols.coef,
+                      late.matched.cov.ols.se, 
+                      late.matched.ols.coef,
+                      late.matched.ols.se,
+                      late.matched.cov.svy.coef,
+                      late.matched.cov.svy.se,
+                      late.matched.svy.coef,
+                      late.matched.svy.se,
+                      late.matched.cov.lasso.coef,
+                      late.matched.lasso.coef,
+                      late.matched.cov.elastic.coef,
+                      late.matched.elastic.coef)
+  rownames(late.matrix) <- c("OLS coef", "OLS SE",
+                             "Weighted OLS coef",
+                             "Weighted OLS SE",
+                             "Survey coef", "Survey SE",
+                             "LASSO coef",
+                             "Weighted LASSO coef",
+                             "Elastic-net coef",
+                             "Weighted Elastic-net coef",
+                             "PSM OLS coef (Covariates)",
+                             "PSM OLS SE (Covariates)",
+                             "PSM OLS coef", "PSM OLS SE",
+                             "PSM Survey coef (covariates)",
+                             "PSM Survey SE (covariates)",
+                             "PSM Survey coef",
+                             "PSM Survey SE",
+                             "PSM LASSO coef (covariates)",
+                             "PSM LASSO coef",
+                          "PSM Elastic-net coef (covariates)",
+                          "PSM Elastic-net coefs")
+  colnames(late.matrix) <- c("TREAT_LATE * TIME_LATE")
+  final.matrix <- cbind(early.matrix, late.matrix)
+  return(final.matrix)
+}
+
+# Get coefficients/standard errors for each outcome.
+genhlth.results <- get.matrix(ols = gnhlth.ols,
+                              ols.weighted = gnhlth.wgt.ols,
+                              lasso = gnhlth.lasso,
+                            lasso.weighted = gnhlth.wgt.lasso,
+                              survey = gnhlth.svy,
+                            elastic = gnhlth.elast,
+                          elastic.weighted = gnhlth.wgt.elast,
+                    matched.cov.ols = gnhlth.matched.cov.ols,
+                    matched.ols = gnhlth.matched.ols,
+                matched.cov.lasso = gnhlth.matched.cov.lasso,
+                matched.lasso = gnhlth.matched.lasso,
+              matched.cov.elastic = gnhlth.matched.cov.elast,
+              matched.elastic = gnhlth.matched.elast,
+              matched.cov.survey = gnhlth.matched.cov.svy,
+              matched.survey = gnhlth.matched.svy)
+checkup.results <- get.matrix(ols = checkup.ols,
+                              ols.weighted = checkup.wgt.ols,
+                              lasso = checkup.lasso,
+                          lasso.weighted = checkup.wgt.lasso,
+                              survey = checkup.svy,
+                            elastic = checkup.elast,
+                         elastic.weighted = checkup.wgt.elast,
+                    matched.cov.ols = checkup.matched.cov.ols,
+                    matched.ols = checkup.matched.ols,
+                matched.cov.lasso = checkup.matched.cov.lasso,
+                matched.lasso = checkup.matched.lasso,
+              matched.cov.elastic = checkup.matched.cov.elast,
+              matched.elastic = checkup.matched.elast,
+              matched.cov.survey = checkup.matched.cov.svy,
+              matched.survey = checkup.matched.svy)
+ovrhlth.results <- get.matrix(ols = ovrhlth.ols,
+                              ols.weighted = ovrhlth.wgt.ols,
+                              lasso = ovrhlth.lasso,
+                          lasso.weighted = ovrhlth.wgt.lasso,
+                              survey = ovrhlth.svy,
+                            elastic = ovrhlth.elast,
+                         elastic.weighted = ovrhlth.wgt.elast,
+                    matched.cov.ols = ovrhlth.matched.cov.ols,
+                    matched.ols = ovrhlth.matched.ols,
+                matched.cov.lasso = ovrhlth.matched.cov.lasso,
+                matched.lasso = ovrhlth.matched.lasso,
+              matched.cov.elastic = ovrhlth.matched.cov.elast,
+              matched.elastic = ovrhlth.matched.elast,
+              matched.cov.survey = ovrhlth.matched.cov.svy,
+              matched.survey = ovrhlth.matched.svy)
+phys.results <- get.matrix(ols = phys.ols,
+                              ols.weighted = phys.wgt.ols,
+                              lasso = phys.lasso,
+                            lasso.weighted = phys.wgt.lasso,
+                              survey = phys.svy,
+                            elastic = phys.elast,
+                          elastic.weighted = phys.wgt.elast,
+                    matched.cov.ols = phys.matched.cov.ols,
+                    matched.ols = phys.matched.ols,
+                matched.cov.lasso = phys.matched.cov.lasso,
+                matched.lasso = phys.matched.lasso,
+              matched.cov.elastic = phys.matched.cov.elast,
+              matched.elastic = phys.matched.elast,
+              matched.cov.survey = phys.matched.cov.svy,
+              matched.survey = phys.matched.svy)
+ment.results <- get.matrix(ols = ment.ols,
+                              ols.weighted = ment.wgt.ols,
+                              lasso = ment.lasso,
+                            lasso.weighted = ment.wgt.lasso,
+                              survey = ment.svy,
+                            elastic = ment.elast,
+                          elastic.weighted = ment.wgt.elast,
+                    matched.cov.ols = ment.matched.cov.ols,
+                    matched.ols = ment.matched.ols,
+                matched.cov.lasso = ment.matched.cov.lasso,
+                matched.lasso = ment.matched.lasso,
+              matched.cov.elastic = ment.matched.cov.elast,
+              matched.elastic = ment.matched.elast,
+              matched.cov.survey = ment.matched.cov.svy,
+              matched.survey = ment.matched.svy)
+persdoc.results <- get.matrix(ols = persdoc.ols,
+                              ols.weighted = persdoc.wgt.ols,
+                              lasso = persdoc.lasso,
+                          lasso.weighted = persdoc.wgt.lasso,
+                              survey = persdoc.svy,
+                            elastic = persdoc.elast,
+                        elastic.weighted = persdoc.wgt.elast,
+                    matched.cov.ols = persdoc.matched.cov.ols,
+                    matched.ols = persdoc.matched.ols,
+                matched.cov.lasso = persdoc.matched.cov.lasso,
+                matched.lasso = persdoc.matched.lasso,
+              matched.cov.elastic = persdoc.matched.cov.elast,
+              matched.elastic = persdoc.matched.elast,
+              matched.cov.survey = persdoc.matched.cov.svy,
+              matched.survey = persdoc.matched.svy)
+hlthpln.results <- get.matrix(ols = hlthpln.ols,
+                              ols.weighted = hlthpln.wgt.ols,
+                              lasso = hlthpln.lasso,
+                          lasso.weighted = hlthpln.wgt.lasso,
+                              survey = hlthpln.svy,
+                            elastic = hlthpln.elast,
+                        elastic.weighted = hlthpln.wgt.elast,
+                    matched.cov.ols = hlthpln.matched.cov.ols,
+                    matched.ols = hlthpln.matched.ols,
+                matched.cov.lasso = hlthpln.matched.cov.lasso,
+                matched.lasso = hlthpln.matched.lasso,
+              matched.cov.elastic = hlthpln.matched.cov.elast,
+              matched.elastic = hlthpln.matched.elast,
+              matched.cov.survey = hlthpln.matched.cov.svy,
+              matched.survey = hlthpln.matched.svy)
+medcost.results <- get.matrix(ols = medcost.ols,
+                              ols.weighted = medcost.wgt.ols,
+                              lasso = medcost.lasso,
+                          lasso.weighted = medcost.wgt.lasso,
+                              survey = medcost.svy,
+                            elastic = medcost.elast,
+                        elastic.weighted = medcost.wgt.elast,
+                    matched.cov.ols = medcost.matched.cov.ols,
+                    matched.ols = medcost.matched.ols,
+                matched.cov.lasso = medcost.matched.cov.lasso,
+                matched.lasso = medcost.matched.lasso,
+              matched.cov.elastic = medcost.matched.cov.elast,
+              matched.elastic = medcost.matched.elast,
+              matched.cov.survey = medcost.matched.cov.svy,
+              matched.survey = medcost.matched.svy)
+print("Coefficient and standard error results for regressions of PROP_GOOD_GENHLTH are:")
+print(genhlth.results)
+print("Coefficient and standard error results for regressions of PROP_ANNUAL_CHECKUP are:")
+print(checkup.results)
+print("Coefficient and standard error results for regressions of PROP_POOR_OVR_HLTH are:")
+print(ovrhlth.results)
+print("Coefficient and standard error results for regressions of PROP_PHYS_DISTRESS are:")
+print(phys.results)
+print("Coefficient and standard error results for regressions of PROP_MENT_DISTRESS are:")
+print(ment.results)
+print("Coefficient and standard error results for regressions of PROP_HLTHPLN are:")
+print(hlthpln.results)
+print("Coefficient and standard error results for regressions of PROP_MEDCOST are:")
+print(medcost.results)
+print("Coefficient and standard error results for regressions of PROP_PERSDOC are:")
+print(persdoc.results)
+
+# Create MS word tables from above matrices.
+# Define a function to do so
+write.matrix.to.txt <- function(results, file.name){
+  write.table(results, file = file.name, sep = ",",
+              quote = F, row.names = T)
+}
+write.matrix.to.txt(genhlth.results,
+                    "genhlth_expansion_results.txt")
+write.matrix.to.txt(checkup.results,
+                    "checkup_expansion_results.txt")
+write.matrix.to.txt(ovrhlth.results,
+                    "ovrhlth_expansion_results.txt")
+write.matrix.to.txt(phys.results,
+                    "phys_distress_expansion_results.txt")
+write.matrix.to.txt(ment.results,
+                    "ment_distress_expansion_results.txt")
+write.matrix.to.txt(hlthpln.results,
+                    "hlthpln_expansion_results.txt")
+write.matrix.to.txt(medcost.results,
+                    "medcost_expansion_results.txt")
+write.matrix.to.txt(persdoc.results,
+                    "persdoc_expansion_results.txt")
+```

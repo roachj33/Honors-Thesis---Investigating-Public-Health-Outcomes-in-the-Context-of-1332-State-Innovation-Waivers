@@ -1,0 +1,235 @@
+---
+title: "Table creator"
+author: "Joey Roach"
+date: "May 17th, 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+``` {r}
+options(scipen = 999)
+std.error.parentheses <- function(std.error){
+  # Arguments:
+  # std.error = Takes a string vector of the coefficient standard error.
+  # Returns a string vector with the standard error within parentheses.
+  result <- rep(0, length(std.error))
+  for (i in 1:length(std.error)){
+      error <- std.error[1, i]
+      step.1 <- paste("(", error, sep = "")
+      step.2 <- paste(step.1, ")", sep = "")
+      result[i] <- step.2
+  }
+  return(result)
+}
+
+merge.coef.se <- function(reg.df, se.vec, idx, row.name){
+  # Arguments:
+  # reg.df = data frame containing all estimator & std error regression results.
+  # se.vec = a vector containing the standard errors for each coefficient
+  #          estimate.
+  # idx = The integer (row) index of the coefficient estimate.
+  # row.name = A string representing what to rename the row after merging
+  #            together the coefficient estimates with the standard errors.
+  # Returns a data frame with the coefficients and standard errors merged together
+  # for the desired coefficient, with the standard error row now removed.
+  for (i in 1:4){
+    # Get coefficient estimate.
+    coef <- reg.df[idx, i]
+    # Paste coefficient and std. error together.
+    reg.df[idx, i] <- paste(coef, se.vec[i])
+  }
+  # Rename row to reflect changes.
+  rownames(reg.df)[idx] <- row.name
+  # Drop standard error row for this coefficient.
+  reg.df <- reg.df[-c(idx + 1), ]
+  return(reg.df)
+}
+
+table.std.errors <- function(reg.df){
+  # Arguments:
+  # reg.df = data frame containing all estimator & std. error regression results.
+  # Returns a data frame with the all standard error estimates contained
+  # within the appropriate estimator with parentheses, and S.E. rows removed.
+  
+  # Get standard errors for each coefficient.
+  ols.se <- reg.df[2, ]
+  wgt.ols.se <- reg.df[4, ]
+  svy.se <- reg.df[6, ]
+  psm.cov.ols.se <- reg.df[12, ]
+  psm.ols.se <- reg.df[14, ]
+  psm.svy.cov.se <- reg.df[16, ]
+  psm.svy.se <- reg.df[18, ]
+  
+  # Convert standard errors to parenthetical format.
+  ols.se.vec <- std.error.parentheses(ols.se)
+  wgt.ols.se.vec <- std.error.parentheses(wgt.ols.se)
+  svy.se.vec <- std.error.parentheses(svy.se)
+  psm.cov.ols.se.vec <- std.error.parentheses(psm.cov.ols.se)
+  psm.ols.se.vec <- std.error.parentheses(psm.ols.se)
+  psm.svy.cov.se.vec <- std.error.parentheses(psm.svy.cov.se)
+  psm.svy.se.vec <- std.error.parentheses(psm.svy.se)
+  
+  # Merge together standard errors with coefficient estimates.
+  ols.se.merged <- merge.coef.se(reg.df, ols.se.vec, 1,
+                                 "OLS coef. (std. errors)")
+  wgt.ols.se.merged <- merge.coef.se(ols.se.merged, wgt.ols.se.vec, 2,
+                                    "Weighted OLS coef. (std. errors)")
+  svy.se.merged <- merge.coef.se(wgt.ols.se.merged, svy.se.vec, 3,
+                                 "Survey coef. (std. errors)")
+  psm.cov.ols.name <- "PSM with covariates OLS coef. (std. errors)"
+  psm.cov.ols.se.merged <- merge.coef.se(svy.se.merged, psm.cov.ols.se.vec, 8,
+                                 row.name = psm.cov.ols.name)
+  psm.ols.name <- "PSM without covariates OLS coef.(std. errors)"
+  psm.ols.se.merged <- merge.coef.se(psm.cov.ols.se.merged, psm.ols.se.vec, 9,
+                                 row.name = psm.ols.name)
+  psm.svy.cov.name <-
+    "PSM with covariates survey coef. (std. errors)"
+  psm.svy.cov.se.merged <- merge.coef.se(psm.ols.se.merged, psm.svy.cov.se.vec,
+                                         10,
+                                 row.name = psm.svy.cov.name)
+  final.name <- 
+    "PSM without covariates survey coef. (std. errors)"
+  final.merged <- merge.coef.se(psm.svy.cov.se.merged, psm.svy.se.vec, 11,
+                                row.name = final.name)
+  return(final.merged)
+}
+
+simplify.digits <- function(reg.df){
+  # Arguments:
+  # reg.df = data frame of all estimator coefficient & std. error data.
+  # Returns a the same data frame but with each digit reduced to 12 decimal
+  # points.
+  for (i in 1:nrow(reg.df)){
+    for (j in 1:length(reg.df[i, ])){
+      figure <- reg.df[i, j]
+      simple <- as.numeric(figure)
+      rounded <- round(simple, digits = 8)
+      reg.df[i, j] <- rounded
+    }
+  }
+  return(reg.df)
+}
+
+
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(formattable)
+library(htmltools)
+library(webshot)
+
+export_formattable <- function(f, file, width = "100%", height = NULL, 
+                               background = "white", delay = 0.2)
+{
+  w <- as.htmlwidget(f, width = width, height = height)
+  path <- html_print(w, background = background, viewer = NULL)
+  url <- paste0("file:///", gsub("\\\\", "/", normalizePath(path)))
+  webshot(url,
+          file = file,
+          selector = ".formattable_widget",
+          delay = delay)
+}
+
+convert.txt.to.table <- function(input.file.names, output.table.names){
+  # Arguments: 
+  # input.file.names = A vector of 2 input file names to read into data frames.
+  #                    The expectation is for these to be ordered such that
+  #                    the first is the outcome estimators for all states, and
+  #                    the second is for the expansion states.
+  # output.table.names = a vector of length 3 specifying output table names. These
+  #                      are expected to follow the format of the first being the
+  #                      name for a table of weighted and PSM with covariate
+  #                      estimates, the second name being for a table of
+  #                      unweighted estimates and the third name corresponding to
+  #                      a table of PSM results with no covariates.
+  
+  # Grab table data for the outcome for both all states and expansion states only.
+  all.states <- input.file.names[1]
+  expand.states <- input.file.names[2]
+  all.states.tbl <- read.delim(all.states, header = T, sep = ",")
+  expand.states.tbl <- read.delim(expand.states, header = T, sep = ",")
+  
+  # Convert tables to data frames.
+  all.states.df <- data.frame(all.states.tbl)
+  expand.states.df <- data.frame(expand.states.tbl)
+  
+  # Rename columns for both data frames
+  names(all.states.df)[1] <- "Early treatment estimator (all states)"
+  names(all.states.df)[2] <- "Late treatment estimator (all states)"
+
+  names(expand.states.df)[1] <- "Early treatment estimator (expansion states)"
+  names(expand.states.df)[2] <- "Late treatment estimator (expansion states)"
+  
+  # Merge together expansion and all states data.
+  total.df <- cbind(all.states.df, expand.states.df)
+
+  # Simplify digits to 8 places.
+  simplified <- simplify.digits(total.df)
+  cleaned.data <- table.std.errors(simplified)
+  rownames(cleaned.data)[4:7] <- c("LASSO coef.",
+                                   "Weighted LASSO coef.",
+                                   "Elastic-net coef.",
+                                   "Weighted elastic-net coef.")
+  psm.rownames <-
+    c("PSM with covariates LASSO coef.",
+      "PSM without covariates LASSO coef.",
+      "PSM with covariates elastic-net coef.",
+      "PSM without covariates elastic-net coef.")
+  rownames(cleaned.data)[12:15] <- psm.rownames
+  primary.data <- cleaned.data[c(2, 3, 5, 7, 8, 10, 12, 14), ]
+  unweighted.data <- cleaned.data[c(1, 4, 6), ]
+  no.cov.psm.data <- cleaned.data[c(9, 11, 13, 15), ]
+  primary.data.fname <- output.table.names[1]
+  unweighted.data.fname <- output.table.names[2]
+  no.cov.psm.data.fname <- output.table.names[3]
+  primary.table <- formattable(primary.data,
+                               align = c(rep("l", ncol(primary.data) - 1)))
+  unweighted.table <- formattable(unweighted.data,
+                                  align = c(rep("l", ncol(unweighted.data) - 1)))
+  psm.table <- formattable(no.cov.psm.data,
+                               align = c(rep("l", ncol(no.cov.psm.data) - 1)))
+  export_formattable(primary.table, file = primary.data.fname, width = "70%")
+  export_formattable(unweighted.table,
+                     file = unweighted.data.fname, width = "70%")
+  export_formattable(psm.table, file = no.cov.psm.data.fname, width = "70%")
+}
+
+genhlth.files <- c("genhlth_results.txt", "genhlth_expansion_results.txt")
+checkup.files <- c("checkup_results.txt", "checkup_expansion_results.txt")
+hlthpln.files <- c("hlthpln_results.txt", "hlthpln_expansion_results.txt")
+medcost.files <- c("medcost_results.txt", "medcost_expansion_results.txt")
+ment.dist.files <- c("ment_distress_results.txt",
+                     "ment_distress_expansion_results.txt")
+ovrhlth.files <- c("ovrhlth_results.txt", "ovrhlth_expansion_results.txt")
+persdoc.files <- c("persdoc_results.txt", "persdoc_expansion_results.txt")
+phys.dist.files <- c("phys_distress_results.txt",
+                     "phys_distress_expansion_results.txt")
+genhlth.outputs <- c("primary_genhlth.png", "unweighted_genhlth.png",
+                     "psm_genhlth.png")
+checkup.outputs <- c("primary_checkup.png", "unweighted_checkup.png",
+                     "psm_checkup.png")
+hlthpln.outputs <- c("primary_hlthpln.png", "unweighted_hlthpln.png",
+                     "psm_hlthpln.png")
+medcost.outputs <- c("primary_medcost.png", "unweighted_medcost.png",
+                     "psm_medcost.png")
+ment.dist.outputs <- c("primary_ment_dist.png", "unweighted_ment_dist.png",
+                     "psm_ment_dist.png")
+ovrhlth.outputs <- c("primary_ovrhlth.png", "unweighted_ovrhlth.png",
+                     "psm_ovrhlth.png")
+persdoc.outputs <- c("primary_persdoc.png", "unweighted_persdoc.png",
+                     "psm_persdoc.png")
+phys.dist.outputs <- c("primary_phys_dist.png", "unweighted_phys_dist.png",
+                     "psm_phys_dist.png")
+
+convert.txt.to.table(genhlth.files, genhlth.outputs)
+convert.txt.to.table(checkup.files, checkup.outputs)
+convert.txt.to.table(hlthpln.files, hlthpln.outputs)
+convert.txt.to.table(medcost.files, medcost.outputs)
+convert.txt.to.table(ment.dist.files, ment.dist.outputs)
+convert.txt.to.table(ovrhlth.files, ovrhlth.outputs)
+convert.txt.to.table(persdoc.files, persdoc.outputs)
+convert.txt.to.table(phys.dist.files, phys.dist.outputs)
+```
